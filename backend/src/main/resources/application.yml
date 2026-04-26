@@ -19,6 +19,10 @@ management:
       exposure:
         include: health,info
 
+miniorch:
+  docker:
+    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

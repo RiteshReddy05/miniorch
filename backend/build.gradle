@@ -29,7 +29,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     implementation "com.github.docker-java:docker-java:${dockerJavaVersion}"
-    implementation "com.github.docker-java:docker-java-transport-httpclient5:${dockerJavaVersion}"
+    implementation "com.github.docker-java:docker-java-transport-zerodep:${dockerJavaVersion}"
 
     implementation "io.jsonwebtoken:jjwt-api:${jjwtVersion}"
     runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
