@@ -4,7 +4,7 @@ A Kubernetes-style container orchestration platform built on top of the Docker E
 
 ## Stack
 
-- **Backend:** Spring Boot 3.3.x, Java 17, Gradle (Groovy DSL)
+- **Backend:** Spring Boot 3.5.x, Java 17, Gradle (Groovy DSL)
 - **Container control:** docker-java 3.4.x (httpclient5 transport)
 - **Database:** PostgreSQL 16
 - **Frontend:** React 18, Vite 5, TailwindCSS 3, axios, react-router-dom 6, lucide-react

@@ -17,7 +17,9 @@ The candidates considered were Spring Boot (Java 17) with the `docker-java` clie
 
 ## Decision
 
-Use **Spring Boot 3.3.x on Java 17** with **`com.github.docker-java:docker-java` 3.4.x** for Docker Engine access.
+Use **Spring Boot 3.5.x on Java 17** with **`com.github.docker-java:docker-java` 3.4.x** for Docker Engine access.
+
+> Originally drafted with Boot 3.3.x. Bumped to 3.5.x on the same day because Spring Initializr no longer bootstraps the 3.3 line (compatibility range is now `>=3.5.0`) and the 3.3 series fell out of free OSS patch support in late 2025. 3.5.x is the current production line, runs on Java 17, and is fully API-compatible with the design assumed in this ADR.
 
 ## Why Spring Boot
 

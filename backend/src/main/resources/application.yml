@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: miniorch-backend
+  datasource:
+    url: ${MINIORCH_DB_URL:jdbc:postgresql://localhost:5432/miniorch}
+    username: ${MINIORCH_DB_USER:miniorch}
+    password: ${MINIORCH_DB_PASSWORD:miniorch_dev}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
