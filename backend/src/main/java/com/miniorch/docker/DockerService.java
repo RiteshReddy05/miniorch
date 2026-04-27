@@ -62,7 +62,7 @@ public class DockerService {
         } catch (NotModifiedException e) {
             log.debug("container {} already stopped", containerId);
         } catch (NotFoundException e) {
-            throw new DockerOperationException("container not found: " + containerId, e);
+            log.debug("container {} already gone", containerId);
         } catch (Exception e) {
             throw new DockerOperationException("stop failed for " + containerId, e);
         }
