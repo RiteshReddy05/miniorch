@@ -27,18 +27,22 @@ A Kubernetes-style container orchestration platform built on top of the Docker E
 
 | Package | Role |
 |---|---|
-| `com.miniorch.api` | REST + WebSocket controllers |
+| `com.miniorch.api` | REST + WebSocket controllers, request/response DTOs, exception handler |
+| `com.miniorch.service` | Deployment business logic, mappers between DTOs and entities |
 | `com.miniorch.controller` | Reconciliation loop, per-deployment convergence |
 | `com.miniorch.docker` | docker-java wrapper |
 | `com.miniorch.persistence` | JPA entities and repositories |
 | `com.miniorch.auth` | JWT issue + verify, Spring Security wiring |
 | `com.miniorch.config` | Spring configuration beans |
+| `com.miniorch.common` | Shared value types referenced from multiple layers (e.g. `PortMapping`) |
 
 ## Current phase
 
-**Day 1 — foundation.** Repo scaffold, Spring Boot bootstrap, `/api/v1/health` endpoint with WebMvcTest coverage, React landing page that probes the backend through the Vite dev proxy, Postgres in docker-compose for local dev.
+**Day 2 — deployment CRUD + Docker integration.** `POST /api/v1/deployments` persists a `Deployment` row plus `Replica` rows and spins up real Docker containers via the `docker` wrapper; `GET` (list / single / events) and `DELETE` (synchronous stop + remove) round out the CRUD. Foundation from Day 1 carries over unchanged.
 
 ## Decisions deferred
 
-- **Database migrations:** Flyway will be added on Day 2 once entities exist. Day 1 ships with `spring.jpa.hibernate.ddl-auto: update` because there are no entities yet and Hibernate has nothing to drift against. Day 5 flips to `validate` once Flyway owns the schema.
+- **Database migrations:** Day 2 still ships with `spring.jpa.hibernate.ddl-auto: update` so the new entities land without an extra migration step. Flyway gets its own focused commit on Day 3 or Day 5 (write `V1__init.sql` from the current schema, flip `ddl-auto` to `validate`).
 - **Spring Security lockdown:** The Day 1 `SecurityConfig` permits all requests. JWT issue / verify and `authenticated()` rules land on Day 5, gated by the `/auth/login` endpoint and bearer-token filter.
+- **Reconciliation loop:** Day 2 is request/response only — if a container dies between `POST` and `GET`, the DB still says `RUNNING`. The scheduled reconciler that converges actual to desired is Day 3.
+- **Per-replica port offsets:** Day 2 replicas all share the same host port mapping, so `desiredReplicas > 1` collides on the second container. Per-replica ephemeral ports + a load balancer ship later (Day 3 or Day 6 with the UI work).
