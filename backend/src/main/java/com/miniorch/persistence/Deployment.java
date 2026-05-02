@@ -68,6 +68,9 @@ public class Deployment {
     @Column(nullable = false, length = 16)
     private Status status;
 
+    @Column(name = "last_observed_status", length = 16)
+    private String lastObservedStatus;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
