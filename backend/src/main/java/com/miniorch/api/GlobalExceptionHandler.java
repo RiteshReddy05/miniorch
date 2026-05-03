@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.util.ConcurrentModificationException;
 import java.util.List;
 
 @RestControllerAdvice
@@ -41,6 +42,13 @@ public class GlobalExceptionHandler {
         log.error("Docker operation failed", ex);
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(ErrorResponse.of(ex.getMessage()));
+    }
+
+    @ExceptionHandler(ConcurrentModificationException.class)
+    public ResponseEntity<ErrorResponse> handleLockTimeout(ConcurrentModificationException ex) {
+        log.warn("Deployment busy: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of("deployment busy, retry"));
     }
 
     @ExceptionHandler(Exception.class)

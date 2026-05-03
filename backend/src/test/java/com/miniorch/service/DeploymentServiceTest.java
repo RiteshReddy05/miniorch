@@ -4,6 +4,7 @@ import com.miniorch.api.ValidationException;
 import com.miniorch.api.dto.CreateDeploymentRequest;
 import com.miniorch.api.dto.DeploymentResponse;
 import com.miniorch.common.PortMapping;
+import com.miniorch.controller.DeploymentLockManager;
 import com.miniorch.docker.ContainerSpec;
 import com.miniorch.docker.DockerOperationException;
 import com.miniorch.docker.DockerService;
@@ -12,6 +13,7 @@ import com.miniorch.persistence.DeploymentEvent;
 import com.miniorch.persistence.DeploymentEventRepository;
 import com.miniorch.persistence.DeploymentRepository;
 import com.miniorch.persistence.Replica;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,8 +55,16 @@ class DeploymentServiceTest {
     @Mock
     private DockerService dockerService;
 
+    @Mock
+    private DeploymentLockManager lockManager;
+
     @InjectMocks
     private DeploymentService deploymentService;
+
+    @BeforeEach
+    void grantLocks() {
+        lenient().when(lockManager.tryLock(any(UUID.class), any(Duration.class))).thenReturn(true);
+    }
 
     private CreateDeploymentRequest requestWith(int replicas) {
         return new CreateDeploymentRequest(
