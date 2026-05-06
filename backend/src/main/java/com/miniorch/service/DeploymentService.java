@@ -104,6 +104,30 @@ public class DeploymentService {
         return DeploymentResponse.from(loadOrThrow(id));
     }
 
+    @Transactional
+    public DeploymentResponse scale(UUID id, int desiredReplicas) {
+        if (desiredReplicas < 1 || desiredReplicas > 10) {
+            throw new ValidationException("desiredReplicas must be between 1 and 10: " + desiredReplicas);
+        }
+        if (!lockManager.tryLock(id, LOCK_TIMEOUT)) {
+            throw new ConcurrentModificationException("deployment busy: " + id);
+        }
+        try {
+            Deployment deployment = loadOrThrow(id);
+            int current = deployment.getDesiredReplicas();
+            if (current == desiredReplicas) {
+                return DeploymentResponse.from(deployment);
+            }
+            deployment.setDesiredReplicas(desiredReplicas);
+            deployment = deploymentRepository.save(deployment);
+            recordEvent(deployment, DeploymentEvent.Type.DEPLOYMENT_SCALED,
+                    "scaled from " + current + " to " + desiredReplicas);
+            return DeploymentResponse.from(deployment);
+        } finally {
+            lockManager.unlock(id);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<DeploymentResponse> list() {
         return deploymentRepository.findAll().stream()
