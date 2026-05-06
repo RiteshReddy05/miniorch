@@ -38,11 +38,11 @@ A Kubernetes-style container orchestration platform built on top of the Docker E
 
 ## Current phase
 
-**Day 2 — deployment CRUD + Docker integration.** `POST /api/v1/deployments` persists a `Deployment` row plus `Replica` rows and spins up real Docker containers via the `docker` wrapper; `GET` (list / single / events) and `DELETE` (synchronous stop + remove) round out the CRUD. Foundation from Day 1 carries over unchanged.
+**Day 3 complete; Day 4 next: HTTP/TCP health checks and CrashLoopBackOff (5 failures in 5 minutes → stop restarting).** Day 3 added the scheduled reconciliation loop (`@Scheduled(fixedDelay = 10s)` per-deployment convergence with exponential backoff, per-deployment locks, and append-only event audit), the `PATCH /api/v1/deployments/{id}/scale` intent endpoint, and unit coverage for the four reconciliation cases plus status-transition emission. Foundation from Days 1–2 carries over.
 
 ## Decisions deferred
 
-- **Database migrations:** Day 2 still ships with `spring.jpa.hibernate.ddl-auto: update` so the new entities land without an extra migration step. Flyway gets its own focused commit on Day 3 or Day 5 (write `V1__init.sql` from the current schema, flip `ddl-auto` to `validate`).
+- **Database migrations:** Still shipping with `spring.jpa.hibernate.ddl-auto: update`. Flyway lands on Day 5 (write `V1__init.sql` from the current schema, flip `ddl-auto` to `validate`).
 - **Spring Security lockdown:** The Day 1 `SecurityConfig` permits all requests. JWT issue / verify and `authenticated()` rules land on Day 5, gated by the `/auth/login` endpoint and bearer-token filter.
-- **Reconciliation loop:** Day 2 is request/response only — if a container dies between `POST` and `GET`, the DB still says `RUNNING`. The scheduled reconciler that converges actual to desired is Day 3.
-- **Per-replica port offsets:** Day 2 replicas all share the same host port mapping, so `desiredReplicas > 1` collides on the second container. Per-replica ephemeral ports + a load balancer ship later (Day 3 or Day 6 with the UI work).
+- **Per-replica port offsets:** Replicas all share the same host port mapping, so `desiredReplicas > 1` collides on the second container when ports are declared. Per-replica ephemeral ports + a load balancer ship later (Day 6 with the UI work).
+- **Health checks and CrashLoopBackOff:** Day 4 — HTTP/TCP probes per replica, plus a 5-failures-in-5-minutes circuit breaker that pins a deployment in `CrashLoopBackOff` and stops further restart attempts until the user intervenes.
