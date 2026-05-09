@@ -1,6 +1,7 @@
 package com.miniorch.persistence;
 
 import com.miniorch.common.PortMapping;
+import com.miniorch.common.ProbeConfig;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -63,6 +64,10 @@ public class Deployment {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private List<PortMapping> ports;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private ProbeConfig probe;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)

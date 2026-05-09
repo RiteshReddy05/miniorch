@@ -23,6 +23,7 @@ public final class DeploymentMapper {
                 .desiredReplicas(request.desiredReplicas())
                 .env(new HashMap<>(request.envOrEmpty()))
                 .ports(new java.util.ArrayList<>(request.portsOrEmpty()))
+                .probe(request.probeOrDefault())
                 .status(Deployment.Status.PENDING)
                 .build();
     }

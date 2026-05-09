@@ -73,7 +73,8 @@ class DeploymentServiceTest {
                 "1.27-alpine",
                 replicas,
                 Map.of(),
-                List.of(new PortMapping(18080, 80, "tcp")));
+                List.of(new PortMapping(18080, 80, "tcp")),
+                null);
     }
 
     private void stubSaveEchosDeployment() {
