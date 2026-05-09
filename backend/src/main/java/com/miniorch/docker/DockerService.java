@@ -6,6 +6,7 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.InternetProtocol;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -41,19 +43,49 @@ public class DockerService {
 
     public ContainerStatus inspect(String containerId) {
         try {
-            InspectContainerResponse response = dockerClient.inspectContainerCmd(containerId).exec();
-            InspectContainerResponse.ContainerState state = response.getState();
-            Instant startedAt = parseInstant(state.getStartedAt());
-            return new ContainerStatus(
-                    response.getId(),
-                    state.getStatus(),
-                    state.getExitCodeLong() == null ? null : state.getExitCodeLong().intValue(),
-                    startedAt);
+            return doInspect(containerId);
         } catch (NotFoundException e) {
             throw new DockerOperationException("container not found: " + containerId, e);
         } catch (Exception e) {
             throw new DockerOperationException("inspect failed for " + containerId, e);
         }
+    }
+
+    public Optional<ContainerStatus> tryInspect(String containerId) {
+        try {
+            return Optional.of(doInspect(containerId));
+        } catch (NotFoundException e) {
+            return Optional.empty();
+        } catch (Exception e) {
+            throw new DockerOperationException("inspect failed for " + containerId, e);
+        }
+    }
+
+    public List<String> findManagedContainers() {
+        try {
+            List<Container> containers = dockerClient.listContainersCmd()
+                    .withShowAll(true)
+                    .withLabelFilter(Map.of("miniorch.managed", "true"))
+                    .exec();
+            List<String> ids = new ArrayList<>(containers.size());
+            for (Container c : containers) {
+                ids.add(c.getId());
+            }
+            return ids;
+        } catch (Exception e) {
+            throw new DockerOperationException("list managed containers failed", e);
+        }
+    }
+
+    private ContainerStatus doInspect(String containerId) {
+        InspectContainerResponse response = dockerClient.inspectContainerCmd(containerId).exec();
+        InspectContainerResponse.ContainerState state = response.getState();
+        Instant startedAt = parseInstant(state.getStartedAt());
+        return new ContainerStatus(
+                response.getId(),
+                state.getStatus(),
+                state.getExitCodeLong() == null ? null : state.getExitCodeLong().intValue(),
+                startedAt);
     }
 
     public void stop(String containerId, int graceSeconds) {

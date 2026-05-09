@@ -5,6 +5,7 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.transport.DockerHttpClient;
 import com.github.dockerjava.zerodep.ZerodepDockerHttpClient;
+import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.miniorch.common.PortMapping;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +108,45 @@ class DockerServiceIT {
         assertThatThrownBy(() -> dockerService.inspect(containerId))
                 .isInstanceOf(DockerOperationException.class)
                 .hasMessageContaining("not found");
+    }
+
+    @Test
+    void findManagedContainers_returnsLabeledOnly() {
+        String labeledId = dockerService.createAndStart(sleepingBusybox("it-managed"));
+        startedContainerIds.add(labeledId);
+
+        CreateContainerResponse unlabeled = dockerClient.createContainerCmd(BUSYBOX + ":" + BUSYBOX_TAG)
+                .withName("miniorch-it-unmanaged-" + shortId())
+                .withCmd("sleep", "30")
+                .withLabels(Map.of("miniorch.test", "true"))
+                .exec();
+        startedContainerIds.add(unlabeled.getId());
+        dockerClient.startContainerCmd(unlabeled.getId()).exec();
+
+        List<String> managed = dockerService.findManagedContainers();
+
+        assertThat(managed).contains(labeledId);
+        assertThat(managed).doesNotContain(unlabeled.getId());
+    }
+
+    @Test
+    void tryInspect_returnsEmptyForMissingId() {
+        String madeUpId = "0000000000000000000000000000000000000000000000000000000000000000";
+
+        Optional<ContainerStatus> result = dockerService.tryInspect(madeUpId);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void tryInspect_returnsStatusForRunningContainer() {
+        String containerId = dockerService.createAndStart(sleepingBusybox("it-tryinspect"));
+        startedContainerIds.add(containerId);
+
+        Optional<ContainerStatus> result = dockerService.tryInspect(containerId);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().state()).isEqualToIgnoringCase("running");
     }
 
     @Test

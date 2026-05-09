@@ -17,6 +17,7 @@ public record DeploymentResponse(
         Map<String, String> env,
         List<PortMapping> ports,
         Deployment.Status status,
+        String observedStatus,
         Instant createdAt,
         Instant updatedAt,
         List<ReplicaResponse> replicas) {
@@ -35,6 +36,7 @@ public record DeploymentResponse(
                 deployment.getEnv() == null ? Map.of() : Map.copyOf(deployment.getEnv()),
                 deployment.getPorts() == null ? List.of() : List.copyOf(deployment.getPorts()),
                 deployment.getStatus(),
+                deployment.getLastObservedStatus(),
                 deployment.getCreatedAt(),
                 deployment.getUpdatedAt(),
                 replicaResponses);

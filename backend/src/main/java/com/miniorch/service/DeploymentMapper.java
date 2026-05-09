@@ -8,6 +8,7 @@ import com.miniorch.persistence.Replica;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public final class DeploymentMapper {
 
@@ -15,6 +16,7 @@ public final class DeploymentMapper {
 
     public static Deployment toEntity(CreateDeploymentRequest request) {
         return Deployment.builder()
+                .id(UUID.randomUUID())
                 .name(request.name())
                 .image(request.image())
                 .tag(request.tag())

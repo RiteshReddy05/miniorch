@@ -3,12 +3,14 @@ package com.miniorch.api;
 import com.miniorch.api.dto.CreateDeploymentRequest;
 import com.miniorch.api.dto.DeploymentEventResponse;
 import com.miniorch.api.dto.DeploymentResponse;
+import com.miniorch.api.dto.ScaleRequest;
 import com.miniorch.service.DeploymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,6 +47,11 @@ public class DeploymentController {
     @GetMapping("/{id}/events")
     public List<DeploymentEventResponse> events(@PathVariable UUID id) {
         return deploymentService.events(id);
+    }
+
+    @PatchMapping("/{id}/scale")
+    public DeploymentResponse scale(@PathVariable UUID id, @Valid @RequestBody ScaleRequest request) {
+        return deploymentService.scale(id, request.desiredReplicas());
     }
 
     @DeleteMapping("/{id}")

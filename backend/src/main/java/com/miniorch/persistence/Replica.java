@@ -63,6 +63,16 @@ public class Replica {
     @Column(name = "last_error", length = 1024)
     private String lastError;
 
+    @Column(name = "restart_count", columnDefinition = "integer not null default 0")
+    @Builder.Default
+    private int restartCount = 0;
+
+    @Column(name = "last_restart_at")
+    private Instant lastRestartAt;
+
+    @Column(name = "last_inspected_at")
+    private Instant lastInspectedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
