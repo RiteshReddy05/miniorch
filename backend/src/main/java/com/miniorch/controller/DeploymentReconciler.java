@@ -1,5 +1,6 @@
 package com.miniorch.controller;
 
+import com.miniorch.common.ProbeConfig;
 import com.miniorch.docker.ContainerSpec;
 import com.miniorch.docker.ContainerStatus;
 import com.miniorch.docker.DockerOperationException;
@@ -38,6 +39,7 @@ public class DeploymentReconciler {
     private final DeploymentEventRepository eventRepository;
     private final DockerService dockerService;
     private final BackoffCalculator backoffCalculator;
+    private final HealthProbeRunner healthProbeRunner;
 
     @Transactional
     public void reconcileOne(UUID deploymentId) {
@@ -51,6 +53,7 @@ public class DeploymentReconciler {
         }
 
         observe(deployment);
+        runProbes(deployment);
         attemptRestarts(deployment);
         converge(deployment);
         emitTransitionIfChanged(deployment);
@@ -81,6 +84,45 @@ public class DeploymentReconciler {
                 } else if (mapped == Replica.Status.EXITED) {
                     Integer code = maybe.get().exitCode();
                     replica.setLastError("container exited" + (code == null ? "" : " (exitCode=" + code + ")"));
+                }
+            }
+        }
+    }
+
+    private void runProbes(Deployment deployment) {
+        ProbeConfig config = deployment.getProbe();
+        if (config == null) {
+            return;
+        }
+        Instant now = Instant.now();
+        Duration interval = Duration.ofSeconds(config.intervalSeconds());
+        for (Replica replica : deployment.getReplicas()) {
+            if (replica.getStatus() != Replica.Status.RUNNING) {
+                continue;
+            }
+            Instant last = replica.getLastProbeAt();
+            if (last != null && now.isBefore(last.plus(interval))) {
+                continue;
+            }
+            ProbeOutcome outcome = healthProbeRunner.probe(replica, config);
+            replica.setLastProbeAt(now);
+            replica.setProbeDetails(outcome.message());
+            Replica.ProbeResult prev = replica.getLastProbeResult();
+            if (outcome.passed()) {
+                replica.setConsecutiveFailures(0);
+                if (prev == Replica.ProbeResult.FAILING) {
+                    recordEvent(deployment, DeploymentEvent.Type.HEALTH_CHECK_PASSED,
+                            "replica " + replica.getReplicaIndex() + " probe recovered: " + outcome.message());
+                }
+                replica.setLastProbeResult(Replica.ProbeResult.PASSING);
+            } else {
+                int failures = replica.getConsecutiveFailures() + 1;
+                replica.setConsecutiveFailures(failures);
+                if (failures >= config.failureThreshold() && prev != Replica.ProbeResult.FAILING) {
+                    recordEvent(deployment, DeploymentEvent.Type.HEALTH_CHECK_FAILED,
+                            "replica " + replica.getReplicaIndex() + " probe failed (" + failures + " consecutive): "
+                                    + outcome.message());
+                    replica.setLastProbeResult(Replica.ProbeResult.FAILING);
                 }
             }
         }

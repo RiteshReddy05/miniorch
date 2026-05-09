@@ -1,5 +1,6 @@
 package com.miniorch.controller;
 
+import com.miniorch.common.ProbeConfig;
 import com.miniorch.docker.ContainerSpec;
 import com.miniorch.docker.ContainerStatus;
 import com.miniorch.docker.DockerService;
@@ -8,6 +9,7 @@ import com.miniorch.persistence.DeploymentEvent;
 import com.miniorch.persistence.DeploymentEventRepository;
 import com.miniorch.persistence.DeploymentRepository;
 import com.miniorch.persistence.Replica;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -49,8 +52,17 @@ class DeploymentReconcilerTest {
     @Mock
     private BackoffCalculator backoffCalculator;
 
+    @Mock
+    private HealthProbeRunner healthProbeRunner;
+
     @InjectMocks
     private DeploymentReconciler reconciler;
+
+    @BeforeEach
+    void defaultProbeOutcome() {
+        lenient().when(healthProbeRunner.probe(any(Replica.class), any(ProbeConfig.class)))
+                .thenReturn(ProbeOutcome.passing("docker reports running", 1));
+    }
 
     @Test
     @DisplayName("no-op when actual replicas match desired and all are running")
@@ -217,6 +229,7 @@ class DeploymentReconcilerTest {
                 .desiredReplicas(desired)
                 .env(Map.of())
                 .ports(List.of())
+                .probe(ProbeConfig.dockerDefault())
                 .status(Deployment.Status.RUNNING)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
