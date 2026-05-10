@@ -26,6 +26,8 @@ management:
 miniorch:
   docker:
     host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+  auth:
+    jwt-secret: ${MINIORCH_JWT_SECRET}
 
 logging:
   pattern:
