@@ -1,6 +1,8 @@
 package com.miniorch.api.dto;
 
 import com.miniorch.common.PortMapping;
+import com.miniorch.common.ProbeConfig;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -23,7 +25,8 @@ public record CreateDeploymentRequest(
         @NotBlank String tag,
         @Min(1) @Max(10) int desiredReplicas,
         Map<String, String> env,
-        List<PortMapping> ports) {
+        List<PortMapping> ports,
+        @Valid ProbeConfig probe) {
 
     public Map<String, String> envOrEmpty() {
         return env == null ? Map.of() : env;
@@ -31,5 +34,9 @@ public record CreateDeploymentRequest(
 
     public List<PortMapping> portsOrEmpty() {
         return ports == null ? List.of() : ports;
+    }
+
+    public ProbeConfig probeOrDefault() {
+        return probe == null ? ProbeConfig.dockerDefault() : probe;
     }
 }

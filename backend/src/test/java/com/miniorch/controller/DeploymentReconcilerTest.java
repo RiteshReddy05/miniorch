@@ -1,5 +1,7 @@
 package com.miniorch.controller;
 
+import com.miniorch.common.ProbeConfig;
+import com.miniorch.common.ProbeType;
 import com.miniorch.docker.ContainerSpec;
 import com.miniorch.docker.ContainerStatus;
 import com.miniorch.docker.DockerService;
@@ -8,6 +10,7 @@ import com.miniorch.persistence.DeploymentEvent;
 import com.miniorch.persistence.DeploymentEventRepository;
 import com.miniorch.persistence.DeploymentRepository;
 import com.miniorch.persistence.Replica;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -49,8 +54,17 @@ class DeploymentReconcilerTest {
     @Mock
     private BackoffCalculator backoffCalculator;
 
+    @Mock
+    private HealthProbeRunner healthProbeRunner;
+
     @InjectMocks
     private DeploymentReconciler reconciler;
+
+    @BeforeEach
+    void defaultProbeOutcome() {
+        lenient().when(healthProbeRunner.probe(any(Replica.class), any(ProbeConfig.class)))
+                .thenReturn(ProbeOutcome.passing("docker reports running", 1));
+    }
 
     @Test
     @DisplayName("no-op when actual replicas match desired and all are running")
@@ -208,6 +222,152 @@ class DeploymentReconcilerTest {
         assertThat(failed.getStatus()).isEqualTo(Replica.Status.FAILED);
     }
 
+    @Test
+    @DisplayName("probe passes — replica state updates, no event written")
+    void probe_passes_doesNothing() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_HEALTHY);
+        Replica replica = addReplica(deployment, 0, "c-0", Replica.Status.RUNNING);
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+        when(dockerService.tryInspect("c-0"))
+                .thenReturn(Optional.of(new ContainerStatus("c-0", "running", null, Instant.now())));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getLastProbeAt()).isNotNull();
+        assertThat(replica.getLastProbeResult()).isEqualTo(Replica.ProbeResult.PASSING);
+        assertThat(replica.getConsecutiveFailures()).isZero();
+        verify(eventRepository, never()).save(any(DeploymentEvent.class));
+    }
+
+    @Test
+    @DisplayName("probe fails below threshold — counter increments, no transition event")
+    void probe_fails_belowThreshold_doesNotTransition() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_HEALTHY);
+        Replica replica = addReplica(deployment, 0, "c-0", Replica.Status.RUNNING);
+        replica.setConsecutiveFailures(1);
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+        when(dockerService.tryInspect("c-0"))
+                .thenReturn(Optional.of(new ContainerStatus("c-0", "running", null, Instant.now())));
+        when(healthProbeRunner.probe(any(Replica.class), any(ProbeConfig.class)))
+                .thenReturn(ProbeOutcome.failing("probe boom", 1));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getConsecutiveFailures()).isEqualTo(2);
+        assertThat(replica.getLastProbeResult()).isEqualTo(Replica.ProbeResult.NOT_PROBED);
+        assertThat(replica.getFailureWindow()).isEmpty();
+        verify(eventRepository, never()).save(any(DeploymentEvent.class));
+    }
+
+    @Test
+    @DisplayName("probe fails at threshold — writes HEALTH_CHECK_FAILED and appends to failureWindow")
+    void probe_fails_atThreshold_writesHealthCheckFailedEvent() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_HEALTHY);
+        Replica replica = addReplica(deployment, 0, "c-0", Replica.Status.RUNNING);
+        replica.setConsecutiveFailures(2);
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+        when(dockerService.tryInspect("c-0"))
+                .thenReturn(Optional.of(new ContainerStatus("c-0", "running", null, Instant.now())));
+        when(healthProbeRunner.probe(any(Replica.class), any(ProbeConfig.class)))
+                .thenReturn(ProbeOutcome.failing("503 from /healthz", 1));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getConsecutiveFailures()).isEqualTo(3);
+        assertThat(replica.getLastProbeResult()).isEqualTo(Replica.ProbeResult.FAILING);
+        assertThat(replica.getFailureWindow()).hasSize(1);
+        ArgumentCaptor<DeploymentEvent> captor = ArgumentCaptor.forClass(DeploymentEvent.class);
+        verify(eventRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(DeploymentEvent.Type.HEALTH_CHECK_FAILED);
+        assertThat(captor.getValue().getMessage()).contains("503");
+    }
+
+    @Test
+    @DisplayName("probe recovers from FAILING — writes HEALTH_CHECK_PASSED")
+    void probe_recovery_writesHealthCheckPassedEvent() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_HEALTHY);
+        Replica replica = addReplica(deployment, 0, "c-0", Replica.Status.RUNNING);
+        replica.setLastProbeResult(Replica.ProbeResult.FAILING);
+        replica.setConsecutiveFailures(5);
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+        when(dockerService.tryInspect("c-0"))
+                .thenReturn(Optional.of(new ContainerStatus("c-0", "running", null, Instant.now())));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getConsecutiveFailures()).isZero();
+        assertThat(replica.getLastProbeResult()).isEqualTo(Replica.ProbeResult.PASSING);
+        ArgumentCaptor<DeploymentEvent> captor = ArgumentCaptor.forClass(DeploymentEvent.class);
+        verify(eventRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(DeploymentEvent.Type.HEALTH_CHECK_PASSED);
+        assertThat(captor.getValue().getMessage()).contains("recovered");
+    }
+
+    @Test
+    @DisplayName("CrashLoopBackOff trips when failureWindow reaches 5 entries within 5 minutes")
+    void crashloop_tripsAt5FailuresIn5Minutes() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_FAILED);
+        Replica replica = addReplica(deployment, 0, "c-0", Replica.Status.RUNNING);
+        Instant now = Instant.now();
+        replica.setFailureWindow(new ArrayList<>(List.of(
+                now.minus(Duration.ofSeconds(240)),
+                now.minus(Duration.ofSeconds(180)),
+                now.minus(Duration.ofSeconds(120)),
+                now.minus(Duration.ofSeconds(60)))));
+        replica.setConsecutiveFailures(2);
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+        when(dockerService.tryInspect("c-0"))
+                .thenReturn(Optional.of(new ContainerStatus("c-0", "running", null, now)));
+        when(healthProbeRunner.probe(any(Replica.class), any(ProbeConfig.class)))
+                .thenReturn(ProbeOutcome.failing("probe down", 1));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getStatus()).isEqualTo(Replica.Status.CRASHLOOP_BACKOFF);
+        assertThat(replica.getFailureWindow()).hasSize(5);
+        ArgumentCaptor<DeploymentEvent> captor = ArgumentCaptor.forClass(DeploymentEvent.class);
+        verify(eventRepository, atLeastOnce()).save(captor.capture());
+        List<DeploymentEvent.Type> types = captor.getAllValues().stream()
+                .map(DeploymentEvent::getType)
+                .toList();
+        assertThat(types).contains(
+                DeploymentEvent.Type.HEALTH_CHECK_FAILED,
+                DeploymentEvent.Type.CRASHLOOP_BACKOFF_TRIPPED);
+    }
+
+    @Test
+    @DisplayName("CRASHLOOP_BACKOFF replica is skipped by observe, probe, and restart phases")
+    void crashloop_replica_isSkippedByRestartLogic() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeDeployment(id, 1);
+        deployment.setLastObservedStatus(DeploymentReconciler.STATUS_FAILED);
+        Replica replica = addReplica(deployment, 0, "c-old", Replica.Status.CRASHLOOP_BACKOFF);
+        replica.setRestartCount(7);
+        replica.setFailureWindow(new ArrayList<>(List.of(Instant.now())));
+        when(deploymentRepository.findById(id)).thenReturn(Optional.of(deployment));
+
+        reconciler.reconcileOne(id);
+
+        assertThat(replica.getStatus()).isEqualTo(Replica.Status.CRASHLOOP_BACKOFF);
+        assertThat(replica.getRestartCount()).isEqualTo(7);
+        verify(dockerService, never()).tryInspect(anyString());
+        verify(dockerService, never()).createAndStart(any(ContainerSpec.class));
+        verify(dockerService, never()).stop(anyString(), anyInt());
+        verify(dockerService, never()).remove(anyString());
+        verify(healthProbeRunner, never()).probe(any(Replica.class), any(ProbeConfig.class));
+        verify(eventRepository, never()).save(any(DeploymentEvent.class));
+    }
+
     private Deployment makeDeployment(UUID id, int desired) {
         return Deployment.builder()
                 .id(id)
@@ -217,6 +377,7 @@ class DeploymentReconcilerTest {
                 .desiredReplicas(desired)
                 .env(Map.of())
                 .ports(List.of())
+                .probe(ProbeConfig.dockerDefault())
                 .status(Deployment.Status.RUNNING)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())

@@ -61,6 +61,35 @@ public class DockerService {
         }
     }
 
+    @SuppressWarnings("deprecation")
+    public Optional<String> getContainerIp(String containerId) {
+        try {
+            InspectContainerResponse response = dockerClient.inspectContainerCmd(containerId).exec();
+            var settings = response.getNetworkSettings();
+            if (settings == null) {
+                return Optional.empty();
+            }
+            String primary = settings.getIpAddress();
+            if (primary != null && !primary.isBlank()) {
+                return Optional.of(primary);
+            }
+            var networks = settings.getNetworks();
+            if (networks != null) {
+                for (var entry : networks.values()) {
+                    String ip = entry.getIpAddress();
+                    if (ip != null && !ip.isBlank()) {
+                        return Optional.of(ip);
+                    }
+                }
+            }
+            return Optional.empty();
+        } catch (NotFoundException e) {
+            return Optional.empty();
+        } catch (Exception e) {
+            throw new DockerOperationException("ip lookup failed for " + containerId, e);
+        }
+    }
+
     public List<String> findManagedContainers() {
         try {
             List<Container> containers = dockerClient.listContainersCmd()

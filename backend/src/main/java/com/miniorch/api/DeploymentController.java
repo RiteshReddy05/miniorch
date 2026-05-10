@@ -54,6 +54,11 @@ public class DeploymentController {
         return deploymentService.scale(id, request.desiredReplicas());
     }
 
+    @PostMapping("/{id}/replicas/{replicaIndex}/reset")
+    public DeploymentResponse resetReplica(@PathVariable UUID id, @PathVariable int replicaIndex) {
+        return deploymentService.resetReplica(id, replicaIndex);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id) {

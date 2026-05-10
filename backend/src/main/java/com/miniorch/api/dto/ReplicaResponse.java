@@ -2,6 +2,7 @@ package com.miniorch.api.dto;
 
 import com.miniorch.persistence.Replica;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public record ReplicaResponse(
@@ -10,7 +11,12 @@ public record ReplicaResponse(
         String containerId,
         String containerName,
         Replica.Status status,
-        String lastError) {
+        String lastError,
+        int restartCount,
+        Replica.ProbeResult lastProbeResult,
+        Instant lastProbeAt,
+        int consecutiveFailures,
+        String probeDetails) {
 
     public static ReplicaResponse from(Replica replica) {
         return new ReplicaResponse(
@@ -19,6 +25,11 @@ public record ReplicaResponse(
                 replica.getContainerId(),
                 replica.getContainerName(),
                 replica.getStatus(),
-                replica.getLastError());
+                replica.getLastError(),
+                replica.getRestartCount(),
+                replica.getLastProbeResult(),
+                replica.getLastProbeAt(),
+                replica.getConsecutiveFailures(),
+                replica.getProbeDetails());
     }
 }

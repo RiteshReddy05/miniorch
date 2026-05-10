@@ -14,6 +14,7 @@ import com.miniorch.persistence.DeploymentEvent;
 import com.miniorch.persistence.DeploymentEventRepository;
 import com.miniorch.persistence.DeploymentRepository;
 import com.miniorch.persistence.Replica;
+import com.miniorch.persistence.Replica.ProbeResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -133,6 +134,38 @@ public class DeploymentService {
         return deploymentRepository.findAll().stream()
                 .map(DeploymentResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public DeploymentResponse resetReplica(UUID id, int replicaIndex) {
+        if (!lockManager.tryLock(id, LOCK_TIMEOUT)) {
+            throw new ConcurrentModificationException("deployment busy: " + id);
+        }
+        try {
+            Deployment deployment = loadOrThrow(id);
+            Replica replica = deployment.getReplicas().stream()
+                    .filter(r -> r.getReplicaIndex() == replicaIndex)
+                    .findFirst()
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "replica not found: deployment=" + id + " index=" + replicaIndex));
+            if (replica.getStatus() != Replica.Status.CRASHLOOP_BACKOFF) {
+                throw new ValidationException(
+                        "replica " + replicaIndex + " is not in CRASHLOOP_BACKOFF (current: "
+                                + replica.getStatus() + ")");
+            }
+            replica.setStatus(Replica.Status.PENDING);
+            replica.setRestartCount(0);
+            replica.setConsecutiveFailures(0);
+            replica.setLastProbeResult(ProbeResult.NOT_PROBED);
+            replica.setLastError(null);
+            replica.setProbeDetails(null);
+            replica.setFailureWindow(new java.util.ArrayList<>());
+            recordEvent(deployment, DeploymentEvent.Type.CRASHLOOP_BACKOFF_RESET,
+                    "replica " + replicaIndex + " reset from CrashLoopBackOff");
+            return DeploymentResponse.from(deployment);
+        } finally {
+            lockManager.unlock(id);
+        }
     }
 
     @Transactional(readOnly = true)

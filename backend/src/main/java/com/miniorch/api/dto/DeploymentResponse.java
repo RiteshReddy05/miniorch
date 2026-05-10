@@ -1,6 +1,7 @@
 package com.miniorch.api.dto;
 
 import com.miniorch.common.PortMapping;
+import com.miniorch.common.ProbeConfig;
 import com.miniorch.persistence.Deployment;
 
 import java.time.Instant;
@@ -16,6 +17,7 @@ public record DeploymentResponse(
         int desiredReplicas,
         Map<String, String> env,
         List<PortMapping> ports,
+        ProbeConfig probe,
         Deployment.Status status,
         String observedStatus,
         Instant createdAt,
@@ -35,6 +37,7 @@ public record DeploymentResponse(
                 deployment.getDesiredReplicas(),
                 deployment.getEnv() == null ? Map.of() : Map.copyOf(deployment.getEnv()),
                 deployment.getPorts() == null ? List.of() : List.copyOf(deployment.getPorts()),
+                deployment.getProbe(),
                 deployment.getStatus(),
                 deployment.getLastObservedStatus(),
                 deployment.getCreatedAt(),

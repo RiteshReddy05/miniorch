@@ -93,30 +93,57 @@ The loop is **single-threaded**: only one reconciliation pass runs at a time, an
               │  reconciler.reconcileOne(d.id)       │
               │     │                                │
               │     ├── 1. observe                   │
-              │     │     for each replica:          │
+              │     │     skip REMOVED + CRASHLOOP   │
+              │     │     for each remaining replica:│
               │     │       dockerService.tryInspect │
               │     │       map state → Replica.Status
+              │     │       fresh exit?              │
+              │     │         → onFailure → window++ │
               │     │                                │
-              │     ├── 2. attemptRestarts           │
+              │     ├── 2. runProbes                 │
+              │     │     skip non-RUNNING replicas  │
+              │     │     skip if intervalSeconds    │
+              │     │       has not elapsed          │
+              │     │     dispatch by ProbeType:     │
+              │     │       HTTP / TCP / DOCKER      │
+              │     │     PASSING  → reset failures, │
+              │     │       FAILING→PASSING transit  │
+              │     │       writes HEALTH_CHECK_PASS │
+              │     │     FAILING  → bump counter,   │
+              │     │       at threshold→FAILING,    │
+              │     │       writes HEALTH_CHECK_FAIL │
+              │     │       + onFailure → window++   │
+              │     │                                │
+              │     ├── 3. attemptRestarts           │
               │     │     for EXITED/FAILED replicas:│
               │     │       backoff gate? skip       │
               │     │       else: stop+remove+create │
               │     │       write RESTART_SCHEDULED  │
               │     │             RESTART_ATTEMPTED  │
+              │     │       on failure → onFailure   │
               │     │                                │
-              │     ├── 3. converge                  │
+              │     ├── 4. converge                  │
               │     │     actual < desired → spawn   │
               │     │     actual > desired → remove  │
               │     │       (highest index first)    │
               │     │     write REPLICA_STARTED      │
               │     │           REPLICA_REMOVED      │
               │     │                                │
-              │     ├── 4. emitTransitionIfChanged   │
+              │     ├── 5. emitTransitionIfChanged   │
               │     │     compute status from        │
               │     │     active replicas            │
               │     │     diff vs lastObservedStatus │
               │     │     write DEPLOYMENT_HEALTHY / │
               │     │           DEPLOYMENT_DEGRADED  │
+              │     │                                │
+              │     │     onFailure (private):       │
+              │     │       window.add(now);         │
+              │     │       drop ts < now-5min;      │
+              │     │       cap at 50 entries;       │
+              │     │       size >= 5 →              │
+              │     │         status=CRASHLOOP_BACKOFF│
+              │     │         write CRASHLOOP_       │
+              │     │           BACKOFF_TRIPPED      │
               │     │                                │
               │  finally: lockManager.unlock(d.id)   │
               └──────────────────────────────────────┘
@@ -131,3 +158,4 @@ A few invariants the flow relies on:
 - **Mutating writes happen inside `@Transactional`** on `reconcileOne`, so a partial failure rolls back the in-memory entity state cleanly.
 - **Events are append-only**. Every action that changed something is recorded in `DeploymentEvent`, which is what `GET /events` returns. The events feed is the user-visible audit trail of what the controller decided to do and why.
 - **Intent vs action is separated.** `PATCH /scale` only updates `desiredReplicas` and writes `DEPLOYMENT_SCALED`. The actual container churn happens later, in `converge`, on a normal reconciliation tick — which means the API stays fast and the controller stays in charge.
+- **Health and crash-loop state is per-replica.** The `probe` field is on the deployment, but `lastProbeResult`, `consecutiveFailures`, and `failureWindow` live on `Replica`. The CrashLoopBackOff state is therefore replica-scoped — one replica being stuck does not pin the others, and `POST /replicas/{index}/reset` un-sticks just that one.

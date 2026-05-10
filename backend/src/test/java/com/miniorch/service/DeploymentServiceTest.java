@@ -73,7 +73,8 @@ class DeploymentServiceTest {
                 "1.27-alpine",
                 replicas,
                 Map.of(),
-                List.of(new PortMapping(18080, 80, "tcp")));
+                List.of(new PortMapping(18080, 80, "tcp")),
+                null);
     }
 
     private void stubSaveEchosDeployment() {
@@ -203,6 +204,56 @@ class DeploymentServiceTest {
         verify(eventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getType()).isEqualTo(DeploymentEvent.Type.ERROR);
         assertThat(eventCaptor.getValue().getMessage()).contains("daemon unreachable");
+    }
+
+    @Test
+    @DisplayName("resetReplica clears the failure window and counters and writes the reset event")
+    void reset_clearsWindowAndCounters() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeRunningDeployment(id, List.of("c-0"));
+        Replica replica = deployment.getReplicas().get(0);
+        replica.setStatus(Replica.Status.CRASHLOOP_BACKOFF);
+        replica.setRestartCount(7);
+        replica.setConsecutiveFailures(4);
+        replica.setLastProbeResult(Replica.ProbeResult.FAILING);
+        replica.setLastError("repeated container exits");
+        replica.setProbeDetails("HTTP 503 from /healthz");
+        replica.setFailureWindow(new ArrayList<>(List.of(
+                Instant.now().minusSeconds(60),
+                Instant.now().minusSeconds(30))));
+        when(deploymentRepository.findById(id)).thenReturn(java.util.Optional.of(deployment));
+
+        DeploymentResponse response = deploymentService.resetReplica(id, 0);
+
+        assertThat(replica.getStatus()).isEqualTo(Replica.Status.PENDING);
+        assertThat(replica.getRestartCount()).isZero();
+        assertThat(replica.getConsecutiveFailures()).isZero();
+        assertThat(replica.getLastProbeResult()).isEqualTo(Replica.ProbeResult.NOT_PROBED);
+        assertThat(replica.getLastError()).isNull();
+        assertThat(replica.getProbeDetails()).isNull();
+        assertThat(replica.getFailureWindow()).isEmpty();
+
+        ArgumentCaptor<DeploymentEvent> captor = ArgumentCaptor.forClass(DeploymentEvent.class);
+        verify(eventRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(DeploymentEvent.Type.CRASHLOOP_BACKOFF_RESET);
+        assertThat(response.replicas().get(0).status()).isEqualTo(Replica.Status.PENDING);
+    }
+
+    @Test
+    @DisplayName("resetReplica rejects replicas that are not in CRASHLOOP_BACKOFF")
+    void reset_failsIfReplicaNotInCrashloop() {
+        UUID id = UUID.randomUUID();
+        Deployment deployment = makeRunningDeployment(id, List.of("c-0"));
+        when(deploymentRepository.findById(id)).thenReturn(java.util.Optional.of(deployment));
+
+        assertThatThrownBy(() -> deploymentService.resetReplica(id, 0))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("CRASHLOOP_BACKOFF")
+                .hasMessageContaining("RUNNING");
+
+        Replica replica = deployment.getReplicas().get(0);
+        assertThat(replica.getStatus()).isEqualTo(Replica.Status.RUNNING);
+        verify(eventRepository, never()).save(any(DeploymentEvent.class));
     }
 
     private Deployment makeRunningDeployment(UUID id, List<String> containerIds) {

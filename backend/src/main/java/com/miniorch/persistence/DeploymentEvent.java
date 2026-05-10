@@ -43,6 +43,10 @@ public class DeploymentEvent {
         DEPLOYMENT_DEGRADED,
         DEPLOYMENT_HEALTHY,
         DEPLOYMENT_DELETED,
+        HEALTH_CHECK_FAILED,
+        HEALTH_CHECK_PASSED,
+        CRASHLOOP_BACKOFF_TRIPPED,
+        CRASHLOOP_BACKOFF_RESET,
         ERROR
     }
 
