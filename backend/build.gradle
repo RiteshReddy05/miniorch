@@ -27,6 +27,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 
     implementation "com.github.docker-java:docker-java:${dockerJavaVersion}"
     implementation "com.github.docker-java:docker-java-transport-zerodep:${dockerJavaVersion}"

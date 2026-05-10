@@ -10,8 +10,12 @@ spring:
     password: ${MINIORCH_DB_PASSWORD:miniorch_dev}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
 
 management:
   endpoints:
