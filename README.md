@@ -26,11 +26,19 @@ Three processes, in order. Each in its own terminal.
    docker compose up -d postgres
    ```
 
-2. **Backend** — Spring Boot API on port 8080:
+2. **Backend** — Spring Boot API on port 8080. The backend needs
+   `MINIORCH_JWT_SECRET` set in its environment (at least 32 chars).
+   Copy `.env.example` to `.env`, generate a real secret, then source it:
 
    ```sh
+   cp .env.example .env                            # one-time
+   sed -i.bak "s|MINIORCH_JWT_SECRET=.*|MINIORCH_JWT_SECRET=$(openssl rand -base64 32)|" .env && rm .env.bak
+   set -a; source .env; set +a
    cd backend && ./gradlew bootRun
    ```
+
+   The application fails to start if `MINIORCH_JWT_SECRET` is missing
+   or shorter than 32 characters — there is no insecure fallback.
 
 3. **Frontend** — Vite dev server on port 5173:
 
@@ -53,14 +61,51 @@ The Docker integration test (`DockerServiceIT`) is tagged `docker` and excluded 
 cd backend && ./gradlew test -PrunDockerIT
 ```
 
+## Authentication
+
+Every API call to `/api/v1/deployments/**` requires a JWT bearer token.
+Only `/api/v1/health` and `/api/v1/auth/**` are public. Tokens are
+HS256, valid for one hour, and signed with `MINIORCH_JWT_SECRET`.
+
+```sh
+# 1. Register a user (one-time)
+curl -s -X POST http://localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"alicepass123"}'
+# -> 201 {"id":"...","username":"alice","role":"USER","createdAt":"..."}
+
+# 2. Login to get a bearer token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"alicepass123"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
+# 3. Use it
+curl -s "http://localhost:8080/api/v1/deployments" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+A missing or invalid token returns `401 {"error":"authentication required"}`.
+A 1-hour-old token is rejected the same way — re-login to refresh.
+Schema is managed by Flyway from `backend/src/main/resources/db/migration`;
+the Spring app validates the schema against the JPA entities on
+startup (`spring.jpa.hibernate.ddl-auto: validate`).
+
 ## Self-healing demo
 
 With Postgres and the backend running, create a 2-replica nginx deployment and watch the reconciler put a killed container back:
 
 ```sh
+# 0. Get a bearer token (see "Authentication" above)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"alicepass123"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
 # 1. Declare desired state: 2 replicas of nginx 1.27-alpine
 curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "selfhealdemo",
     "image": "nginx",
@@ -84,7 +129,7 @@ docker ps --filter label=miniorch.deployment-name=selfhealdemo \
 
 # 5. Read the controller's decision trail
 curl -s "http://localhost:8080/api/v1/deployments/$ID/events" \
-  | python3 -m json.tool
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
 You will see a fresh `miniorch-selfhealdemo-1` container, and the events feed shows the reconciler's reasoning — `REPLICA_RESTART_SCHEDULED`, `REPLICA_RESTART_ATTEMPTED`, and a `DEPLOYMENT_HEALTHY` transition once the new container is up.
@@ -94,6 +139,7 @@ Scaling works the same way — record intent, let the loop converge:
 ```sh
 curl -s -X PATCH "http://localhost:8080/api/v1/deployments/$ID/scale" \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"desiredReplicas": 4}'
 
 sleep 12
@@ -104,7 +150,8 @@ docker ps --filter label=miniorch.deployment-name=selfhealdemo \
 Cleanup:
 
 ```sh
-curl -s -X DELETE "http://localhost:8080/api/v1/deployments/$ID"
+curl -s -X DELETE "http://localhost:8080/api/v1/deployments/$ID" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Health checks and CrashLoopBackOff

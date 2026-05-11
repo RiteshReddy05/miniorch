@@ -9,6 +9,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.UUID;
 
@@ -25,7 +26,7 @@ public class JwtTokenProvider {
 
     public IssuedToken issue(User user) {
         Instant now = Instant.now();
-        Instant expiresAt = now.plus(TOKEN_TTL);
+        Instant expiresAt = now.plus(TOKEN_TTL).truncatedTo(ChronoUnit.SECONDS);
         String token = Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("username", user.getUsername())

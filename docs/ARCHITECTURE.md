@@ -42,12 +42,14 @@
 |---|---|
 | `com.miniorch.api` | REST + WebSocket controllers — translates HTTP into service calls |
 | `com.miniorch.service` | Deployment business logic, mappers between DTOs and entities |
-| `com.miniorch.controller` | Reconciliation loop, per-deployment convergence, lock manager, backoff policy |
+| `com.miniorch.controller` | Reconciliation loop, per-deployment convergence, lock manager, backoff policy, health probers |
 | `com.miniorch.docker` | docker-java wrapper: list, create, start, stop, inspect, logs |
-| `com.miniorch.persistence` | JPA entities and repositories for deployments, replicas, events |
-| `com.miniorch.auth` | JWT issue + verify, Spring Security integration |
-| `com.miniorch.config` | Spring configuration beans (security, scheduling, websocket) |
-| `com.miniorch.common` | Shared value types referenced from multiple layers (e.g. `PortMapping`) |
+| `com.miniorch.persistence` | JPA entities and repositories for deployments, replicas, events, users |
+| `com.miniorch.auth` | User entity + repo, register/login service, JWT issue + verify, bearer-token filter |
+| `com.miniorch.config` | Spring configuration beans (security filter chain, 401 entry point) |
+| `com.miniorch.common` | Shared value types referenced from multiple layers (`PortMapping`, `ProbeConfig`, `ProbeType`) |
+
+Schema is managed by Flyway from `backend/src/main/resources/db/migration`. Hibernate runs in `ddl-auto: validate` so a drift between entity and column types fails the application context at startup instead of letting the ORM mutate the live schema. `V1__baseline.sql` reproduces the Day 1–Day 4 schema exactly; subsequent versions (starting with `V2__users.sql`) add new tables.
 
 ## The reconciliation loop, in plain language
 
@@ -159,3 +161,56 @@ A few invariants the flow relies on:
 - **Events are append-only**. Every action that changed something is recorded in `DeploymentEvent`, which is what `GET /events` returns. The events feed is the user-visible audit trail of what the controller decided to do and why.
 - **Intent vs action is separated.** `PATCH /scale` only updates `desiredReplicas` and writes `DEPLOYMENT_SCALED`. The actual container churn happens later, in `converge`, on a normal reconciliation tick — which means the API stays fast and the controller stays in charge.
 - **Health and crash-loop state is per-replica.** The `probe` field is on the deployment, but `lastProbeResult`, `consecutiveFailures`, and `failureWindow` live on `Replica`. The CrashLoopBackOff state is therefore replica-scoped — one replica being stuck does not pin the others, and `POST /replicas/{index}/reset` un-sticks just that one.
+
+## Authentication
+
+Every endpoint under `/api/v1/deployments/**` is locked down behind a JWT bearer token. `/api/v1/health`, `POST /api/v1/auth/register`, and `POST /api/v1/auth/login` are the only public paths.
+
+```
+            HTTP request
+                 │
+                 ▼
+        ┌─────────────────────────────┐
+        │  JwtAuthenticationFilter    │
+        │  (OncePerRequestFilter)     │
+        │                             │
+        │  read Authorization header  │
+        │   ├─ no Bearer prefix:      │
+        │   │    continue chain       │
+        │   ├─ valid token:           │
+        │   │    parse claims,        │
+        │   │    set                  │
+        │   │    SecurityContext      │
+        │   │    with                 │
+        │   │    ROLE_USER /          │
+        │   │    ROLE_ADMIN,          │
+        │   │    continue chain       │
+        │   └─ invalid token:         │
+        │        log debug,           │
+        │        continue chain       │
+        │        without context      │
+        └────────────┬────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  authorizeHttpRequests      │
+        │                             │
+        │  /api/v1/health        →    │
+        │     permitAll               │
+        │  /api/v1/auth/**       →    │
+        │     permitAll               │
+        │  anyRequest()          →    │
+        │     authenticated()         │
+        └────────────┬────────────────┘
+                     │
+        ┌────────────┴────────────────┐
+        │ auth passed?                │
+        │   yes → controller          │
+        │   no  → AuthenticationEntryPoint
+        │         writes 401 JSON     │
+        └─────────────────────────────┘
+```
+
+Sessions are STATELESS — no `JSESSIONID` cookie, no server-side session store; the JWT *is* the session. CSRF is disabled because bearer-token authentication is inherently CSRF-resistant (browsers do not auto-attach Authorization headers cross-origin the way they do cookies). The 401 from a missing or rejected token is rendered by a custom `AuthenticationEntryPoint` so the response shape matches every other `ErrorResponse` in the API: `{"error": "...", "details": []}`.
+
+The token payload carries `sub` (userId UUID), `username`, `role`, `iat`, and `exp`. The role claim is the bare enum name (`USER` / `ADMIN`); the filter adds the `ROLE_` prefix when constructing Spring authorities so the JWT stays clean. Tokens are HS256, signed with `MINIORCH_JWT_SECRET` (validated `@NotBlank @Size(min=32)` on application startup), valid for one hour, and not refreshable in-band — clients re-login to renew.
