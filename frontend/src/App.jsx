@@ -3,16 +3,17 @@ import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import RequireAuth from './auth/RequireAuth.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import DeploymentsList from './pages/DeploymentsList.jsx';
 
 function Root() {
   const { isAuthenticated } = useAuth();
   return <Navigate to={isAuthenticated ? '/deployments' : '/login'} replace />;
 }
 
-function PlaceholderDeployments() {
+function PlaceholderDetail() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">
-      <p className="text-slate-400">Deployments view lands in the next commit.</p>
+      <p className="text-slate-400">Deployment detail page lands in the next commit.</p>
     </main>
   );
 }
@@ -26,10 +27,18 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
-            path="/deployments/*"
+            path="/deployments"
             element={
               <RequireAuth>
-                <PlaceholderDeployments />
+                <DeploymentsList />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/deployments/:id"
+            element={
+              <RequireAuth>
+                <PlaceholderDetail />
               </RequireAuth>
             }
           />
