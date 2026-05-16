@@ -46,8 +46,9 @@ Three processes, in order. Each in its own terminal.
    cd frontend && npm install && npm run dev
    ```
 
-Then open <http://localhost:5173>. The landing page should report
-`Backend: OK (v0.1.0)` once the backend is up.
+Then open <http://localhost:5173>. The Vite dev server proxies `/api`
+to the Spring Boot backend on port 8080, so the SPA can call relative
+paths (`/api/v1/...`) without CORS handling.
 
 ### Running tests
 
@@ -60,6 +61,63 @@ The Docker integration test (`DockerServiceIT`) is tagged `docker` and excluded 
 ```sh
 cd backend && ./gradlew test -PrunDockerIT
 ```
+
+## Frontend
+
+The React + Vite SPA lives in `frontend/`. It exercises every backend
+capability — register / login, list / create / scale / detail / events
+/ reset-replica / delete — over the same JWT-authenticated REST API
+documented below.
+
+Two design decisions worth knowing about:
+
+- **The JWT lives in `sessionStorage`, not `localStorage`.** Closing
+  the tab drops the token; reopening the SPA prompts a fresh sign-in.
+  The intentional tradeoff: a stolen browser process never exposes a
+  persistent JWT across sessions, at the cost of "lose the tab, lose
+  the session". The Day-1 SecurityConfig's `permitAll`-everything was
+  the placeholder; Day 5a closed the auth surface, and Day 6's
+  sessionStorage choice keeps the surface narrow.
+- **Auto-refresh is plain `setInterval`** inside a small `usePolling`
+  hook. Polling pauses on `document.hidden` (no API traffic from a
+  backgrounded tab) and resumes with an immediate refetch on
+  visibility change. The list and detail pages both poll on 10s — the
+  same cadence as the reconciliation loop, so a controller-side
+  convergence (scale, restart, CrashLoopBackOff trip) shows up in the
+  UI within one tick.
+
+Manual walkthrough, after `npm run dev`:
+
+1. Open <http://localhost:5173/login>, register a fresh user → land
+   on `/deployments` (empty state).
+2. "New deployment" opens the create modal. Submit `nginx:1.27-alpine`
+   with `desiredReplicas: 1` (image pulls can take up to 60s on a
+   first run — the submit button surfaces this).
+3. Row appears in the list. Click it for the detail page; switch
+   between Replicas and Events tabs.
+4. In another terminal, `docker kill miniorch-<name>-0`. Within one
+   poll cycle the UI shows the replica `EXITED`, then `RUNNING` again
+   after the reconciler restarts it. The Events tab grows the
+   matching `REPLICA_RESTART_SCHEDULED` / `REPLICA_RESTART_ATTEMPTED`
+   entries.
+5. To trigger CrashLoopBackOff, run a kill-on-sight loop:
+
+   ```sh
+   while true; do
+     docker kill $(docker ps -q --filter label=miniorch.deployment-name=<name>) 2>/dev/null
+     sleep 2
+   done
+   ```
+
+   After ~50s, the replica flips to `CRASHLOOP_BACKOFF` and a "Reset
+   replica" button appears on its card. Stop the kill loop, click
+   Reset, watch the replica come back through `PENDING` → `RUNNING`.
+6. "Delete" on the detail page gates the action behind typing the
+   deployment name exactly. On success, navigate back to the list
+   and the row is gone.
+
+The full UI design rationale (sessionStorage, polling-vs-TanStack
+Query, no-test-runner choice) is in `docs/adr/0005-frontend.md`.
 
 ## Authentication
 
@@ -153,6 +211,27 @@ Cleanup:
 curl -s -X DELETE "http://localhost:8080/api/v1/deployments/$ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+## Future work
+
+- Frontend tests (vitest + @testing-library/react). Day 6 shipped the
+  UI without a frontend test runner — the auth flow, list, detail,
+  reset, and delete paths were verified end-to-end in headless Chrome
+  via Playwright during the live demos for commits 1, 2, and 3, but
+  there is no committed test suite that exercises them on every push.
+  Adding vitest is its own focused commit.
+- WebSocket log streaming and Docker stats metrics. The
+  `spring-boot-starter-websocket` dependency has been on the classpath
+  since Day 1 but is still unused. Day 5b will add a per-container log
+  stream endpoint plus a `/metrics` aggregator that exposes
+  `docker stats`. WebSocket auth needs the bearer token in the
+  handshake query string since browsers don't allow custom headers on
+  the `Upgrade: websocket` request.
+- Per-user deployment ownership and finer-grained RBAC. Every
+  authenticated user can manage every deployment today. Adding an
+  `owner_id` column to `Deployment` and scoping list/detail/scale/
+  delete by owner (with `ROLE_ADMIN` retaining full access) lands
+  later if at all.
 
 ## Health checks and CrashLoopBackOff
 

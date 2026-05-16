@@ -51,6 +51,8 @@
 
 Schema is managed by Flyway from `backend/src/main/resources/db/migration`. Hibernate runs in `ddl-auto: validate` so a drift between entity and column types fails the application context at startup instead of letting the ORM mutate the live schema. `V1__baseline.sql` reproduces the Day 1–Day 4 schema exactly; subsequent versions (starting with `V2__users.sql`) add new tables.
 
+The React + Vite frontend (`frontend/`) is a thin client over the REST API — no business logic, no WebSocket yet. Every page is a small `useState` + a `usePolling` hook that re-fetches on a 10s cadence (matched to the reconciliation loop) and pauses when `document.hidden`. The JWT lives in `sessionStorage`, an axios request interceptor attaches it as `Authorization: Bearer`, and a response interceptor maps any 401 to a `miniorch:unauthorized` window event that the auth context turns into a logout + toast + redirect. Design rationale is in `docs/adr/0005-frontend.md`.
+
 ## The reconciliation loop, in plain language
 
 Every ten seconds the loop wakes up and, for each `Deployment` in the database, asks two questions:
