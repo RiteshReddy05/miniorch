@@ -7,6 +7,7 @@ import ReplicaSummary from '../components/ReplicaSummary.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
 import CreateDeploymentModal from '../components/CreateDeploymentModal.jsx';
 import ScaleModal from '../components/ScaleModal.jsx';
+import { DeploymentRowsSkeleton } from '../components/Skeleton.jsx';
 import usePolling from '../hooks/usePolling.js';
 import { listDeployments } from '../lib/deployments.js';
 import { extractErrorMessage, relativeTime } from '../lib/format.js';
@@ -81,7 +82,7 @@ export default function DeploymentsList() {
         )}
 
         {deployments === null ? (
-          <p className="text-sm text-slate-500">Loading deployments…</p>
+          <DeploymentRowsSkeleton />
         ) : deployments.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 px-6 py-16 text-center">
             <Boxes className="mx-auto h-10 w-10 text-slate-600" aria-hidden="true" />

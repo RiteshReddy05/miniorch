@@ -3,8 +3,10 @@ import Modal from './Modal.jsx';
 import ErrorBanner from './ErrorBanner.jsx';
 import { resetReplica } from '../lib/deployments.js';
 import { extractErrorMessage, extractErrorDetails } from '../lib/format.js';
+import { useToast } from './Toast.jsx';
 
 export default function ResetReplicaDialog({ deploymentId, replica, onClose, onResetDone }) {
+  const toast = useToast();
   const [error, setError] = useState(null);
   const [details, setDetails] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -16,6 +18,11 @@ export default function ResetReplicaDialog({ deploymentId, replica, onClose, onR
     try {
       const updated = await resetReplica(deploymentId, replica.replicaIndex);
       onResetDone(updated);
+      toast.push({
+        tone: 'success',
+        title: 'Replica reset',
+        message: `replica #${replica.replicaIndex} returned to PENDING`,
+      });
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, 'reset failed'));

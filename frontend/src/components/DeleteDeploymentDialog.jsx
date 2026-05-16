@@ -3,8 +3,10 @@ import Modal from './Modal.jsx';
 import ErrorBanner from './ErrorBanner.jsx';
 import { deleteDeployment } from '../lib/deployments.js';
 import { extractErrorMessage, extractErrorDetails } from '../lib/format.js';
+import { useToast } from './Toast.jsx';
 
 export default function DeleteDeploymentDialog({ deployment, onClose, onDeleted }) {
+  const toast = useToast();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState(null);
   const [details, setDetails] = useState([]);
@@ -17,6 +19,11 @@ export default function DeleteDeploymentDialog({ deployment, onClose, onDeleted 
     setSubmitting(true);
     try {
       await deleteDeployment(deployment.id);
+      toast.push({
+        tone: 'success',
+        title: 'Deployment deleted',
+        message: deployment.name,
+      });
       onDeleted();
     } catch (err) {
       setError(extractErrorMessage(err, 'delete failed'));

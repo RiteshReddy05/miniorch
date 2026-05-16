@@ -5,6 +5,7 @@ import FormField from './FormField.jsx';
 import ErrorBanner from './ErrorBanner.jsx';
 import { createDeployment } from '../lib/deployments.js';
 import { extractErrorDetails, extractErrorMessage } from '../lib/format.js';
+import { useToast } from './Toast.jsx';
 
 const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
@@ -49,6 +50,7 @@ function buildProbe(probe) {
 }
 
 export default function CreateDeploymentModal({ onClose, onCreated }) {
+  const toast = useToast();
   const [name, setName] = useState('');
   const [image, setImage] = useState('');
   const [tag, setTag] = useState('');
@@ -106,6 +108,7 @@ export default function CreateDeploymentModal({ onClose, onCreated }) {
     try {
       const created = await createDeployment(body);
       onCreated(created);
+      toast.push({ tone: 'success', title: 'Deployment created', message: created.name });
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, 'create failed'));

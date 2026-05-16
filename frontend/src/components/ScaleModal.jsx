@@ -4,8 +4,10 @@ import FormField from './FormField.jsx';
 import ErrorBanner from './ErrorBanner.jsx';
 import { scaleDeployment } from '../lib/deployments.js';
 import { extractErrorDetails, extractErrorMessage } from '../lib/format.js';
+import { useToast } from './Toast.jsx';
 
 export default function ScaleModal({ deployment, onClose, onScaled }) {
+  const toast = useToast();
   const [desiredReplicas, setDesiredReplicas] = useState(deployment.desiredReplicas);
   const [error, setError] = useState(null);
   const [details, setDetails] = useState([]);
@@ -24,6 +26,11 @@ export default function ScaleModal({ deployment, onClose, onScaled }) {
     try {
       const updated = await scaleDeployment(deployment.id, value);
       onScaled(updated);
+      toast.push({
+        tone: 'success',
+        title: 'Scale applied',
+        message: `${deployment.name} -> ${value} replica${value === 1 ? '' : 's'}`,
+      });
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, 'scale failed'));

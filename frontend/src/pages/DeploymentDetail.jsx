@@ -9,6 +9,7 @@ import ScaleModal from '../components/ScaleModal.jsx';
 import ResetReplicaDialog from '../components/ResetReplicaDialog.jsx';
 import DeleteDeploymentDialog from '../components/DeleteDeploymentDialog.jsx';
 import ErrorBanner from '../components/ErrorBanner.jsx';
+import { DeploymentDetailSkeleton } from '../components/Skeleton.jsx';
 import usePolling from '../hooks/usePolling.js';
 import { getDeployment, getDeploymentEvents } from '../lib/deployments.js';
 import { extractErrorMessage, relativeTime } from '../lib/format.js';
@@ -65,7 +66,7 @@ export default function DeploymentDetail() {
         )}
 
         {deployment === null ? (
-          <p className="text-sm text-slate-500">Loading deployment…</p>
+          <DeploymentDetailSkeleton />
         ) : (
           <>
             <header className="flex flex-wrap items-start justify-between gap-4">
